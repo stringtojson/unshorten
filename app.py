@@ -1,55 +1,79 @@
 import streamlit as st
 import requests
 import re
-import pandas as pd
 
 # Konfigurasi Tampilan Web
-st.set_page_config(page_title="Tokopedia Link Cleaner", page_icon="🛍️")
+st.set_page_config(page_title="Marketplace Link Cleaner", page_icon="🛒")
 
-st.title("🛍️ Tokopedia Unshortener & Cleaner")
-st.markdown("Masukkan link **vt.tokopedia.com** di bawah untuk merapikan formatnya.")
+st.title("🛒 Marketplace Unshortener & Cleaner")
+st.markdown("Masukkan link **Tokopedia (vt)** atau **Shopee (s.shopee)** di bawah.")
 
 # Input area
-input_text = st.text_area("List URL Pendek (Satu per baris):", height=200, placeholder="https://vt.tokopedia.com/t/ZS...")
+input_text = st.text_area("List URL Pendek (Satu per baris):", height=200, placeholder="https://vt.tokopedia.com/...\nhttps://s.shopee.co.id/...")
 
-def clean_tokped_url(url_pendek):
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+def clean_marketplace_url(url_pendek):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
     try:
-        # Proses Unshorten (Server-side Python, NO CORS!)
-        res = requests.get(url_pendek, headers=headers, allow_redirects=True, timeout=10)
+        # Proses Unshorten (Mengikuti redirect sampai mentok)
+        res = requests.get(url_pendek, headers=headers, allow_redirects=True, timeout=15)
         url_panjang = res.url
         
-        # Ambil ID Produk
-        match = re.search(r'(?:product|pdp)/(\d+)', url_panjang) or re.search(r'/(\d{15,})', url_panjang)
-        if match:
-            return f"https://shop-id.tokopedia.com/pdp/{match.group(1)}"
-        return f"Gagal Ekstrak ID: {url_panjang[:50]}..."
+        # --- LOGIKA TOKOPEDIA ---
+        if "tokopedia.com" in url_panjang:
+            match = re.search(r'(?:product|pdp)/(\d+)', url_panjang) or re.search(r'/(\d{15,})', url_panjang)
+            if match:
+                return f"https://shop-id.tokopedia.com/pdp/{match.group(1)}"
+            return f"Tokopedia (ID Tak Temu): {url_panjang[:60]}..."
+
+        # --- LOGIKA SHOPEE ---
+        elif "shopee.co.id" in url_panjang:
+            # Cari pola product/SHOPID/ITEMID
+            match_shopee = re.search(r'product/(\d+)/(\d+)', url_panjang)
+            if match_shopee:
+                shop_id = match_shopee.group(1)
+                item_id = match_shopee.group(2)
+                return f"https://shopee.co.id/product/{shop_id}/{item_id}"
+            
+            # Fallback jika URL Shopee tipe lain tapi punya ID unik di akhir
+            match_alt = re.search(r'i\.(\d+)\.(\d+)', url_panjang)
+            if match_alt:
+                return f"https://shopee.co.id/product/{match_alt.group(1)}/{match_alt.group(2)}"
+            
+            return f"Shopee (ID Tak Temu): {url_panjang[:60]}..."
+
+        return f"Bukan Tokped/Shopee: {url_panjang[:60]}..."
+
     except Exception as e:
         return f"Error: {str(e)}"
 
-if st.button("Proses Sekarang"):
+if st.button("Bersihkan Semua Link"):
     urls = [u.strip() for u in input_text.split('\n') if u.strip()]
     
     if not urls:
-        st.warning("Masukkan link dulu, Bro!")
+        st.warning("Paste link-nya dulu, Bro!")
     else:
         hasil_list = []
+        progress_text = st.empty()
         progress_bar = st.progress(0)
         
         for i, url in enumerate(urls):
-            hasil = clean_tokped_url(url)
+            progress_text.text(f"Memproses {i+1} dari {len(urls)} link...")
+            hasil = clean_marketplace_url(url)
             hasil_list.append(hasil)
-            # Update progress
             progress_bar.progress((i + 1) / len(urls))
         
+        progress_text.text("✅ Semua link selesai diproses!")
+        
         # Tampilkan Hasil
-        st.success(f"Berhasil memproses {len(hasil_list)} link!")
-        st.text_area("Hasil Rapi:", value="\n".join(hasil_list), height=200)
+        st.success(f"Berhasil merapikan {len(hasil_list)} link!")
+        st.text_area("Hasil Bersih:", value="\n".join(hasil_list), height=250)
         
         # Tombol Download
         st.download_button(
-            label="Simpan ke .TXT",
+            label="📥 Download Hasil (.txt)",
             data="\n".join(hasil_list),
-            file_name="hasil_bersih_tokped.txt",
+            file_name="hasil_bersih_marketplace.txt",
             mime="text/plain"
         )
